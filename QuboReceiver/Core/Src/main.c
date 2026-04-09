@@ -116,6 +116,8 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	state = FULL_CONVERT;
 }
 
+double avg = 0;
+uint16_t max = 0;
 
 /* USER CODE END 0 */
 
@@ -508,7 +510,7 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 // The ADC is 16 bit resolution, and the input voltage is 3.3V max.
-double map_voltage(uint32_t val){
+double map_voltage(uint16_t val){
 	return ((float)val*3.3f) / (65535.0f);
 }
 
@@ -528,28 +530,35 @@ double map_voltage(uint32_t val){
  *
  *
  * */
-/*
-void goertzel(int freq){
-	double w = 2*pi*freq/(SAMPLING_FREQUENCY/640.0f);
-	double cos = cos(w);
-	double sin = sin(w);
+
+void goertzel(double target){
+	double w = 2*M_PI * target/SAMPLING_FREQUENCY;
+	double COS = cos(w);
+    double SIN = sin(w);
 
 	double sprev2 = 0;
-	double sprev1 = 0;
+	double sprev = 0;
 	double s = 0;
 
 
 	for(int i = 0; i < MIC_BUFFER_LENGTH/2; i = i + 1) {
-		s = adc_val[i] + 2 * cos * sprev1 - sprev2;
-		sprev2 = sprev1;
-		sprev1 = s;
+		s = value_adc[i] + (2 * COS * sprev) - sprev2;
+		sprev2 = sprev;
+		sprev = s;
 	}
 
-	double coeff_re = s_prev - cos * s_prev2;
-    double coeff_im = -sin * s_prev2;
+	double coeff_re = sprev - COS * sprev2;
+    double coeff_im = SIN * sprev2;
+    double magnitude = sqrt(coeff_re*coeff_re + coeff_im*coeff_im);
+
+    printf("| %f + j%f | ~ < %f >", coeff_re, coeff_im, magnitude);
+
+    if(magnitude >= 20000000) printf("Large Presense!");
+
+    printf("\n\r");
 }
 
-*/
+
 
 
 
@@ -571,14 +580,7 @@ void StartBlink01(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
-	  osDelay(700);
-	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 1);
-	  osDelay(700);
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, 1);
-	  osDelay(700);
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, 0);
-	  osDelay(700);
+	  osDelay(10);
   }
   /* USER CODE END 5 */
 }
@@ -597,15 +599,7 @@ void StartBlink02(void *argument)
   /* Infinite loop */
   for(;;)
   {
-//	  printf("HEY: %lu ...\n",value_adc);
-	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
-      osDelay(250);
-      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 1);
-      osDelay(250);
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, 1);
-      osDelay(250);
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, 0);
-      osDelay(250);
+	  osDelay(10);
   }
   /* USER CODE END StartBlink02 */
 }
@@ -628,7 +622,7 @@ void handleMicInput(void *argument)
 	  // This only triggers on the transitions between half and full.
 	  // if state is full then this code runs while last_state was half_conv
 	  if(last_state != state && state == FULL_CONVERT){
-		  printf("TRANSITION!\n\r");
+//		  printf("TRANSITION!\n\r");
 
 		  double sum = 0;
 		  uint16_t max = 0;
@@ -639,8 +633,16 @@ void handleMicInput(void *argument)
 //			  printf("|%f|", map_voltage(value_adc[i]));
 		  }
 
-		  double avg = 2.0f * sum/MIC_BUFFER_LENGTH;
-		  printf("| %f |\n\r", map_voltage(max));
+		  avg = 2.0f * sum/MIC_BUFFER_LENGTH;
+//		  printf("| %f |\n\r", map_voltage(max));
+
+		  goertzel(500.0f);
+		  if(map_voltage(max) >= 2.8f){
+		  		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
+		  } else HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 1);
+
+
+
 	  }
 
 

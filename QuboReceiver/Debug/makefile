@@ -70,8 +70,8 @@ all: main-build
 main-build: TestingThings.elf secondary-outputs
 
 # Tool invocations
-TestingThings.elf TestingThings.map: $(OBJS) $(USER_OBJS) C:\Users\kiran\Downloads\TestingThings\STM32H750VBTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "TestingThings.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"C:\Users\kiran\Downloads\TestingThings\STM32H750VBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="TestingThings.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+TestingThings.elf TestingThings.map: $(OBJS) $(USER_OBJS) C:\Users\kiran\Documents\GitHub\qubo_receiver_testing\QuboReceiver\STM32H750VBTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "TestingThings.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"C:\Users\kiran\Documents\GitHub\qubo_receiver_testing\QuboReceiver\STM32H750VBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="TestingThings.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
