@@ -42,7 +42,8 @@ typedef struct {
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define MIC_BUFFER_LENGTH 8192
-#define SAMPLING_FREQUENCY 10000
+#define SAMPLING_FREQUENCY 100000
+
 
 /* USER CODE END PD */
 
@@ -532,7 +533,7 @@ double map_voltage(uint16_t val){
  * */
 
 void goertzel(double target){
-	double w = 2*M_PI * target/SAMPLING_FREQUENCY;
+	double w = 2 * M_PI * target/SAMPLING_FREQUENCY;
 	double COS = cos(w);
     double SIN = sin(w);
 
@@ -540,22 +541,23 @@ void goertzel(double target){
 	double sprev = 0;
 	double s = 0;
 
+	double x = 0;
 
 	for(int i = 0; i < MIC_BUFFER_LENGTH/2; i = i + 1) {
-		s = value_adc[i] + (2 * COS * sprev) - sprev2;
+		x = (double) value_adc[i] - avg;
+		s = x + (2 * COS * sprev) - sprev2;
 		sprev2 = sprev;
 		sprev = s;
 	}
 
 	double coeff_re = sprev - COS * sprev2;
     double coeff_im = SIN * sprev2;
-    double magnitude = sqrt(coeff_re*coeff_re + coeff_im*coeff_im);
+    double magnitude = 2*sqrt(coeff_re*coeff_re + coeff_im*coeff_im)/MIC_BUFFER_LENGTH;
 
-    printf("| %f + j%f | ~ < %f >", coeff_re, coeff_im, magnitude);
+    printf("%f Hz: < %f > || ", target, magnitude);
 
-    if(magnitude >= 20000000) printf("Large Presense!");
+//    if(magnitude >= 20000000) printf("Large Presence!");
 
-    printf("\n\r");
 }
 
 
@@ -629,18 +631,25 @@ void handleMicInput(void *argument)
 		  for(int i = 0; i < MIC_BUFFER_LENGTH/2; i = i + 1){
 			  if(value_adc[i] >= max) max = value_adc[i];
 
-			  sum += map_voltage(value_adc[i]);
+			  sum += value_adc[i];
 //			  printf("|%f|", map_voltage(value_adc[i]));
 		  }
 
 		  avg = 2.0f * sum/MIC_BUFFER_LENGTH;
 //		  printf("| %f |\n\r", map_voltage(max));
 
+		  goertzel(100.0f);
+		  goertzel(200.0f);
+		  goertzel(440.0f);
 		  goertzel(500.0f);
-		  if(map_voltage(max) >= 2.8f){
+		  goertzel(700.0f);
+		  goertzel(1000.0f);
+
+		  if(map_voltage(max) >= 2.9f){
 		  		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
 		  } else HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 1);
 
+		  printf("\n\r");
 
 
 	  }
