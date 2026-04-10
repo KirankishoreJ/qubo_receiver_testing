@@ -86,6 +86,8 @@ volatile uint16_t value_adc[MIC_BUFFER_LENGTH];
 volatile int state;
 volatile int last_state;
 
+static const int frequencies[] = {262, 293, 330, 350, 392, 440, 494, 523};
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -532,8 +534,8 @@ double map_voltage(uint16_t val){
  *
  * */
 
-void goertzel(double target){
-	double w = 2 * M_PI * target/SAMPLING_FREQUENCY;
+void goertzel(int target){
+	double w = 2.0f * M_PI * target/SAMPLING_FREQUENCY;
 	double COS = cos(w);
     double SIN = sin(w);
 
@@ -554,7 +556,7 @@ void goertzel(double target){
     double coeff_im = SIN * sprev2;
     double magnitude = 2*sqrt(coeff_re*coeff_re + coeff_im*coeff_im)/MIC_BUFFER_LENGTH;
 
-    printf("%f Hz: < %f > || ", target, magnitude);
+    printf("%d Hz: < %04.2f > || ", target, magnitude);
 
 //    if(magnitude >= 20000000) printf("Large Presence!");
 
@@ -638,12 +640,9 @@ void handleMicInput(void *argument)
 		  avg = 2.0f * sum/MIC_BUFFER_LENGTH;
 //		  printf("| %f |\n\r", map_voltage(max));
 
-		  goertzel(100.0f);
-		  goertzel(200.0f);
-		  goertzel(440.0f);
-		  goertzel(500.0f);
-		  goertzel(700.0f);
-		  goertzel(1000.0f);
+		  for(int k = 0; k < sizeof(frequencies)/sizeof(frequencies[0]); k = k + 1){
+			  goertzel(frequencies[k]);
+		  }
 
 		  if(map_voltage(max) >= 2.9f){
 		  		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
