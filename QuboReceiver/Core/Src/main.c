@@ -31,12 +31,6 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef struct {
-	int k;
-	double amplitude;
-	double phase;
-} DFT_Coeff;
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -86,7 +80,20 @@ volatile uint16_t value_adc[MIC_BUFFER_LENGTH];
 volatile int state;
 volatile int last_state;
 
-static const int frequencies[] = {262, 293, 330, 350, 392, 440, 494, 523};
+volatile unsigned int DATA = 0;
+volatile unsigned int MASK = 0;
+
+volatile double MAGNITUDE[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+volatile double PHASE[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+// Configurable frequencies with corresponding cos and sin values calculated at initialization
+// These should ideally be fourier frequencies --> 	Since N/2 = 4096, we have
+// multiplies of df = 2pi/4096 ~ 1.534 mHz and should be normalized
+static const double frequencies[8] = {220, 540, 780, 1190, 1592, 2240, 3194, 5523};
+static double COS_VAL[8];
+static double SIN_VAL[8];
+
+static double MAGNITUDE_THRESHOLD = 1000.0f;
 
 /* USER CODE END PV */
 
@@ -108,8 +115,8 @@ void handleMicInput(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define HALF_CONVERT 0x00
-#define FULL_CONVERT 0x01
+#define HALF_CONVERT 0x0
+#define FULL_CONVERT 0x1
 
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
 	state = HALF_CONVERT;
@@ -512,6 +519,17 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+// Calculate all cos, sin values beforehand to use for Goertzel
+void init_frequencies(){
+	double w = 0;
+	for(int i = 0; i < sizeof(frequencies)/sizeof(frequencies[0]); i = i + 1){
+		w = 2*M_PI*frequencies[i]/SAMPLING_FREQUENCY;
+		COS_VAL[i] = cos(w);
+		SIN_VAL[i] = sin(w);
+	}
+
+}
+
 // The ADC is 16 bit resolution, and the input voltage is 3.3V max.
 double map_voltage(uint16_t val){
 	return ((float)val*3.3f) / (65535.0f);
@@ -521,7 +539,7 @@ double map_voltage(uint16_t val){
  * Simple implementation of the Goertzel Algorithm, which calculates
  * a singular DFT bin of a given sequence x.
  *
- * w = 2pi/fs * f --> Fourier frequency of input f
+ * w = 2pi* k/N  --> Fourier frequency
  * 1st sequence: s[n] = x[n] + 2cos(w)x[n-1] - x[n-2]
  * 2nd: y[n] = s[n] - exp(-jw)s[n-1] --> y[N] is the DFT term of w
  *
@@ -529,15 +547,15 @@ double map_voltage(uint16_t val){
 */
 
 /*
- * analog(2*pi*f0*t) --> digital(2*pi*f0/fs * n)
+ * analog(2*pi*f0*t) --> digital(2*pi*f0/fs * n) --> fourier(2 * pi * k/N)
+ *
  *
  *
  * */
 
-void goertzel(int target){
-	double w = 2.0f * M_PI * target/SAMPLING_FREQUENCY;
-	double COS = cos(w);
-    double SIN = sin(w);
+void goertzel(int i){
+	double COS = COS_VAL[i];
+    double SIN = SIN_VAL[i];
 
 	double sprev2 = 0;
 	double sprev = 0;
@@ -554,12 +572,22 @@ void goertzel(int target){
 
 	double coeff_re = sprev - COS * sprev2;
     double coeff_im = SIN * sprev2;
-    double magnitude = 2*sqrt(coeff_re*coeff_re + coeff_im*coeff_im)/MIC_BUFFER_LENGTH;
+    MAGNITUDE[i] = 2 * sqrt(coeff_re*coeff_re + coeff_im*coeff_im)/MIC_BUFFER_LENGTH;
+    PHASE[i] = atan2(coeff_im, coeff_re);
 
-    printf("%d Hz: < %04.2f > || ", target, magnitude);
+//    printf("[%04f Hz: |%0.1f|, <%0.1f>]", frequencies[i], MAGNITUDE[i], PHASE[i]);
+}
 
-//    if(magnitude >= 20000000) printf("Large Presence!");
-
+void extract_data(){
+	DATA = 0;
+	for(int i = 0; i < sizeof(frequencies)/sizeof(frequencies[0]); i = i + 1){
+		// If this frequency has a certain presence, the ith bit becomes 1.
+		if(MAGNITUDE[i] >= MAGNITUDE_THRESHOLD){
+			MASK = 0x00000001 << i;
+			DATA = DATA | MASK;
+		}
+	}
+	printf("\n\r- %d -", DATA);
 }
 
 
@@ -618,43 +646,46 @@ void StartBlink02(void *argument)
 void handleMicInput(void *argument)
 {
   /* USER CODE BEGIN handleMicInput */
+	init_frequencies();
+
 	HAL_ADC_Start_DMA(&hadc2,(uint32_t*)&value_adc,MIC_BUFFER_LENGTH);
 	HAL_TIM_Base_Start(&htim3);
   /* Infinite loop */
   for(;;)
   {
 	  // This only triggers on the transitions between half and full.
-	  // if state is full then this code runs while last_state was half_conv
+	  // Calculate average on the transition from FULL --> HALF (full conv is done)
+	  // Calculate goertzel on the transition from HALF --> FULL (half conv is done)
 	  if(last_state != state && state == FULL_CONVERT){
-//		  printf("TRANSITION!\n\r");
 
-		  double sum = 0;
-		  uint16_t max = 0;
-		  for(int i = 0; i < MIC_BUFFER_LENGTH/2; i = i + 1){
-			  if(value_adc[i] >= max) max = value_adc[i];
-
-			  sum += value_adc[i];
-//			  printf("|%f|", map_voltage(value_adc[i]));
+		  for(int i = 0; i < sizeof(frequencies)/sizeof(frequencies[0]); i = i + 1){
+			  goertzel(i);
 		  }
 
-		  avg = 2.0f * sum/MIC_BUFFER_LENGTH;
-//		  printf("| %f |\n\r", map_voltage(max));
-
-		  for(int k = 0; k < sizeof(frequencies)/sizeof(frequencies[0]); k = k + 1){
-			  goertzel(frequencies[k]);
-		  }
-
-		  if(map_voltage(max) >= 2.9f){
-		  		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
-		  } else HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 1);
+		  extract_data();
 
 		  printf("\n\r");
 
+
+	  } else if(last_state != state && state == HALF_CONVERT){
+		  double sum = 0;
+		  uint16_t max = 0;
+		  for(int i = MIC_BUFFER_LENGTH/2; i < MIC_BUFFER_LENGTH; i = i + 1){
+			  if(value_adc[i] >= max) max = value_adc[i];
+			  sum += value_adc[i];
+			  //printf("|%f|", map_voltage(value_adc[i]));
+		  }
+
+		  if(map_voltage(max) >= 2.9f){
+			  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
+		  } else HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 1);
+		  avg = 2.0f * sum/MIC_BUFFER_LENGTH;
 
 	  }
 
 
 	  last_state = state;
+
     osDelay(10);
   }
   /* USER CODE END handleMicInput */
